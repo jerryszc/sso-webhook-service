@@ -3,6 +3,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import get_current_principal
+from app.core.config import settings
+from app.core.ratelimit import rate_limiter
 from app.schemas.auth import (
     ClientCredentialsRequest,
     LoginRequest,
@@ -25,7 +27,12 @@ from app.services.auth_service import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limiter("register"))],
+)
 async def register(body: RegisterRequest, session: AsyncSession = Depends(get_session)) -> UserOut:
     try:
         user = await register_user(session, body.email, body.password)
@@ -34,7 +41,7 @@ async def register(body: RegisterRequest, session: AsyncSession = Depends(get_se
     return UserOut(id=user.id, email=user.email, role=user.role, is_active=user.is_active)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair, dependencies=[Depends(rate_limiter("login"))])
 async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenPair:
     try:
         user = await authenticate_user(session, body.email, body.password)
@@ -62,7 +69,11 @@ async def logout(body: LogoutRequest, session: AsyncSession = Depends(get_sessio
     return None
 
 
-@router.post("/token", response_model=TokenPair)
+@router.post(
+    "/token",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limiter("token", max_requests=settings.rate_limit_token_per_minute))],
+)
 async def client_token(
     body: ClientCredentialsRequest, session: AsyncSession = Depends(get_session)
 ) -> TokenPair:

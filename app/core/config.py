@@ -22,5 +22,9 @@ class Settings(BaseSettings):
     webhook_backoff_base_seconds: int = 2
     webhook_hmac_header: str = "X-Signature"
 
+    rate_limit_auth_per_minute: int = 10
+    rate_limit_token_per_minute: int = 20
+    rate_limit_window_seconds: int = 60
+
 
 settings = Settings()
