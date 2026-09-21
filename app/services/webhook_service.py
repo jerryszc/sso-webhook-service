@@ -3,7 +3,9 @@ import uuid
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db import async_session_factory
 from app.core.redis import get_redis
+from app.models.audit_log import AuditLog
 from app.models.webhook_delivery import WebhookDelivery
 from app.models.webhook_endpoint import WebhookEndpoint
 from app.models.webhook_event import WebhookEvent
@@ -13,6 +15,26 @@ class WebhookError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+async def _log_audit(
+    event_type: str,
+    user_id: str,
+    metadata: dict,
+    session: AsyncSession | None = None,
+) -> None:
+    """Log audit event. If session is provided, use it; otherwise use a separate session."""
+    async def _do_log(s: AsyncSession) -> None:
+        audit = AuditLog(user_id=user_id, event_type=event_type, meta=metadata)
+        s.add(audit)
+        await s.flush()
+
+    if session is not None:
+        await _do_log(session)
+    else:
+        async with async_session_factory() as audit_session:
+            await _do_log(audit_session)
+            await audit_session.commit()
 
 
 async def create_endpoint(
@@ -27,11 +49,17 @@ async def create_endpoint(
     )
     session.add(endpoint)
     await session.flush()
+    await _log_audit(
+        "webhook_created",
+        user_id=owner_user_id,
+        metadata={"endpoint_id": endpoint.id, "url": url, "event_types": event_types},
+        session=session,
+    )
     return endpoint
 
 
 async def publish_event(
-    session: AsyncSession, event_type: str, payload: dict, source: str, idempotency_key: str | None
+    session: AsyncSession, event_type: str, payload: dict, source: str, idempotency_key: str | None, user_id: str
 ) -> tuple[WebhookEvent, bool]:
     key = idempotency_key or f"{event_type}:{uuid.uuid4()}"
     existing = (
@@ -61,4 +89,11 @@ async def publish_event(
             await client.rpush("webhook:queue", *created_ids)
         except Exception:
             pass
+
+    await _log_audit(
+        "webhook_event_published",
+        user_id=user_id,
+        metadata={"event_id": event.id, "event_type": event_type, "delivery_count": len(created_ids)},
+        session=session,
+    )
     return event, True

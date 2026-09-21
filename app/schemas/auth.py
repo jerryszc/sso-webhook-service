@@ -25,6 +25,15 @@ class ClientCredentialsRequest(BaseModel):
     scope: str = Field(default="", max_length=1024)
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str | None = None

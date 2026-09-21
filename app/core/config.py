@@ -26,5 +26,8 @@ class Settings(BaseSettings):
     rate_limit_token_per_minute: int = 20
     rate_limit_window_seconds: int = 60
 
+    password_reset_token_minutes: int = 15
+    audit_log_retention_days: int = 90
+
 
 settings = Settings()

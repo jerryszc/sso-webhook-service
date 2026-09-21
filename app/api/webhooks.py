@@ -24,6 +24,12 @@ def _principal_user_id(principal: dict) -> str:
     return f"client:{principal['client'].client_id}"
 
 
+def _get_audit_user_id(principal: dict) -> str | None:
+    if principal["kind"] == "user":
+        return principal["user"].id
+    return None
+
+
 @router.post("/endpoints", response_model=EndpointOut, status_code=status.HTTP_201_CREATED)
 async def create_ep(
     body: EndpointCreate,
@@ -61,7 +67,10 @@ async def publish(
 ) -> EventOut:
     if not idempotency_key:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Idempotency-Key required")
-    event, _ = await publish_event(session, body.type, body.payload, body.source, idempotency_key)
+    audit_user_id = _get_audit_user_id(principal)
+    if audit_user_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User token required for webhook publishing")
+    event, _ = await publish_event(session, body.type, body.payload, body.source, idempotency_key, audit_user_id)
     return EventOut(id=event.id, type=event.type, idempotency_key=event.idempotency_key)
 
 
