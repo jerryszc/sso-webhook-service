@@ -1,0 +1,27 @@
+# --- Env / secrets (nunca commitear) ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Alembic ---
+# (se versiona versions/, no el .ini local si tuviera secretos; el nuestro es genérico y sí se versiona)
+
+# --- Docker ---
+pgdata/
+redisdata/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
