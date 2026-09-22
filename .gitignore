@@ -25,3 +25,8 @@ redisdata/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- AI / Tool configs (no commitear) ---
+agents.md
+qa-agent.md
+.opencode/
