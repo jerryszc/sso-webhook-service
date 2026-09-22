@@ -1,6 +1,5 @@
 import secrets
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from sqlmodel import select
@@ -37,6 +36,7 @@ async def _log_audit(
     session: AsyncSession | None = None,
 ) -> None:
     """Log audit event. If session is provided, use it; otherwise use a separate session."""
+
     async def _do_log(s: AsyncSession) -> None:
         audit = AuditLog(user_id=user_id, ip=ip, event_type=event_type, meta=metadata or {})
         s.add(audit)
@@ -50,7 +50,9 @@ async def _log_audit(
             await audit_session.commit()
 
 
-async def register_user(session: AsyncSession, email: str, password: str, ip: str | None = None) -> User:
+async def register_user(
+    session: AsyncSession, email: str, password: str, ip: str | None = None
+) -> User:
     existing = (await session.exec(select(User).where(User.email == email))).first()
     if existing is not None:
         await _log_audit("login_failed", ip=ip, metadata={"reason": "email_exists", "email": email})
@@ -58,7 +60,9 @@ async def register_user(session: AsyncSession, email: str, password: str, ip: st
     user = User(email=email, password_hash=hash_password(password), role="user", is_active=True)
     session.add(user)
     await session.flush()
-    await _log_audit("user_registered", user_id=user.id, ip=ip, metadata={"email": email}, session=session)
+    await _log_audit(
+        "user_registered", user_id=user.id, ip=ip, metadata={"email": email}, session=session
+    )
     return user
 
 
@@ -68,7 +72,9 @@ async def authenticate_user(
     result = await session.exec(select(User).where(User.email == email))
     user = result.first()
     if user is None or not verify_password(password, user.password_hash) or not user.is_active:
-        await _log_audit("login_failed", ip=ip, metadata={"reason": "invalid_credentials", "email": email})
+        await _log_audit(
+            "login_failed", ip=ip, metadata={"reason": "invalid_credentials", "email": email}
+        )
         raise AuthError("Invalid credentials")
     await _log_audit("login_success", user_id=user.id, ip=ip, session=session)
     return user
@@ -77,7 +83,7 @@ async def authenticate_user(
 async def _store_refresh(
     session: AsyncSession, *, user_id: str | None, client_db_id: str | None, jti: str
 ) -> None:
-    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_days)
+    expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_days)
     session.add(
         RefreshToken(
             user_id=user_id, service_client_id=client_db_id, jti=jti, expires_at=expires_at
@@ -101,9 +107,9 @@ async def rotate_refresh(
     try:
         payload = decode_token(refresh_token)
     except jwt.ExpiredSignatureError:
-        raise AuthError("Refresh expired")
+        raise AuthError("Refresh expired") from None
     except jwt.InvalidTokenError:
-        raise AuthError("Invalid refresh token")
+        raise AuthError("Invalid refresh token") from None
     if payload.get("type") != "refresh":
         raise AuthError("Invalid token type")
 
@@ -146,7 +152,7 @@ async def revoke_refresh(session: AsyncSession, refresh_token: str, ip: str | No
     try:
         payload = decode_token(refresh_token)
     except jwt.InvalidTokenError:
-        raise AuthError("Invalid refresh token")
+        raise AuthError("Invalid refresh token") from None
     jti: str = payload.get("jti", "")
     sub: str = payload.get("sub", "")
     kind, _, identifier = sub.partition(":")
@@ -161,14 +167,27 @@ async def revoke_refresh(session: AsyncSession, refresh_token: str, ip: str | No
         await _log_audit("logout", user_id=identifier, ip=ip, session=session)
 
 
-async def issue_client_token(session: AsyncSession, client_id: str, secret: str, ip: str | None = None) -> tuple[str, str]:
+async def issue_client_token(
+    session: AsyncSession, client_id: str, secret: str, ip: str | None = None
+) -> tuple[str, str]:
     result = await session.exec(select(ServiceClient).where(ServiceClient.client_id == client_id))
     client = result.first()
-    if client is None or not client.is_active or not verify_password(secret, client.client_secret_hash):
-        await _log_audit("m2m_token_generated", ip=ip, metadata={"client_id": client_id, "success": False})
+    if (
+        client is None
+        or not client.is_active
+        or not verify_password(secret, client.client_secret_hash)
+    ):
+        await _log_audit(
+            "m2m_token_generated", ip=ip, metadata={"client_id": client_id, "success": False}
+        )
         raise AuthError("Invalid client credentials")
     access, _ = create_access_token(f"client:{client.client_id}", {"scopes": client.scopes})
-    await _log_audit("m2m_token_generated", ip=ip, metadata={"client_id": client_id, "success": True}, session=session)
+    await _log_audit(
+        "m2m_token_generated",
+        ip=ip,
+        metadata={"client_id": client_id, "success": True},
+        session=session,
+    )
     return access, client.scopes
 
 
@@ -179,7 +198,9 @@ async def request_password_reset(
     result = await session.exec(select(User).where(User.email == email))
     user = result.first()
     if user is None:
-        await _log_audit("password_reset_requested", ip=ip, metadata={"email": email, "user_found": False})
+        await _log_audit(
+            "password_reset_requested", ip=ip, metadata={"email": email, "user_found": False}
+        )
         # Don't reveal if user exists - return success anyway
         return None, ""  # type: ignore
 
@@ -189,7 +210,7 @@ async def request_password_reset(
             select(PasswordResetToken).where(
                 PasswordResetToken.user_id == user.id,
                 PasswordResetToken.used == False,  # noqa: E712
-                PasswordResetToken.expires_at > datetime.now(timezone.utc),
+                PasswordResetToken.expires_at > datetime.now(UTC),
             )
         )
     ).all()
@@ -199,7 +220,7 @@ async def request_password_reset(
     # Generate secure token
     plain_token = secrets.token_urlsafe(32)
     token_hash = hash_password(plain_token)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_token_minutes)
+    expires_at = datetime.now(UTC) + timedelta(minutes=settings.password_reset_token_minutes)
 
     reset_token = PasswordResetToken(
         user_id=user.id,
@@ -209,7 +230,13 @@ async def request_password_reset(
     session.add(reset_token)
     await session.flush()
 
-    await _log_audit("password_reset_requested", user_id=user.id, ip=ip, metadata={"email": email}, session=session)
+    await _log_audit(
+        "password_reset_requested",
+        user_id=user.id,
+        ip=ip,
+        metadata={"email": email},
+        session=session,
+    )
     return user, plain_token
 
 
@@ -222,7 +249,7 @@ async def confirm_password_reset(
         await session.exec(
             select(PasswordResetToken).where(
                 PasswordResetToken.used == False,  # noqa: E712
-                PasswordResetToken.expires_at > datetime.now(timezone.utc),
+                PasswordResetToken.expires_at > datetime.now(UTC),
             )
         )
     ).all()
@@ -234,7 +261,9 @@ async def confirm_password_reset(
             break
 
     if reset_token is None:
-        await _log_audit("password_changed", ip=ip, metadata={"success": False, "reason": "invalid_token"})
+        await _log_audit(
+            "password_changed", ip=ip, metadata={"success": False, "reason": "invalid_token"}
+        )
         raise AuthError("Invalid or expired reset token")
 
     # Mark token as used
@@ -246,8 +275,10 @@ async def confirm_password_reset(
         raise AuthError("User not found")
 
     user.password_hash = hash_password(new_password)
-    user.updated_at = datetime.now(timezone.utc)
+    user.updated_at = datetime.now(UTC)
     session.add(user)
 
-    await _log_audit("password_changed", user_id=user.id, ip=ip, metadata={"success": True}, session=session)
+    await _log_audit(
+        "password_changed", user_id=user.id, ip=ip, metadata={"success": True}, session=session
+    )
     return user

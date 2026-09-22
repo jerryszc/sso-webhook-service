@@ -1,7 +1,7 @@
 """Seeds idempotentes (M2M + admin). Sin credenciales hardcodeadas: todo vía entorno."""
 
+import logging
 import os
-import sys
 
 from sqlmodel import select
 
@@ -10,20 +10,22 @@ from app.core.security import hash_password
 from app.models.service_client import ServiceClient
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 
 async def seed_client() -> None:
     client_id = os.getenv("SEED_CLIENT_ID", "").strip()
     secret = os.getenv("SEED_CLIENT_SECRET", "").strip()
     scopes = os.getenv("SEED_CLIENT_SCOPES", "webhooks:publish").strip()
     if not client_id or not secret:
-        print("seed client: SKIP (SEED_CLIENT_ID/SEED_CLIENT_SECRET no definidos)")
+        logger.info("seed client: SKIP (SEED_CLIENT_ID/SEED_CLIENT_SECRET no definidos)")
         return
     async with async_session_factory() as session:
         existing = (
             await session.exec(select(ServiceClient).where(ServiceClient.client_id == client_id))
         ).first()
         if existing is not None:
-            print(f"seed client: exists {client_id}")
+            logger.info("seed client: exists %s", client_id)
             return
         session.add(
             ServiceClient(
@@ -34,17 +36,17 @@ async def seed_client() -> None:
             )
         )
         await session.commit()
-        print(f"seed client: created {client_id} scopes={scopes}")
+        logger.info("seed client: created %s scopes=%s", client_id, scopes)
 
 
 async def seed_admin() -> None:
     email = os.getenv("SEED_ADMIN_EMAIL", "").strip()
     password = os.getenv("SEED_ADMIN_PASSWORD", "").strip()
     if not email or not password:
-        print("seed admin: SKIP (SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD no definidos)")
+        logger.info("seed admin: SKIP (SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD no definidos)")
         return
     if len(password) < 8:
-        print("seed admin: ERROR password mínimo 8 caracteres", file=sys.stderr)
+        logger.error("seed admin: ERROR password mínimo 8 caracteres")
         raise SystemExit(2)
     async with async_session_factory() as session:
         existing = (await session.exec(select(User).where(User.email == email))).first()
@@ -53,13 +55,15 @@ async def seed_admin() -> None:
                 existing.role = "admin"
                 session.add(existing)
                 await session.commit()
-                print(f"seed admin: promoted {email}")
+                logger.info("seed admin: promoted %s", email)
             else:
-                print(f"seed admin: exists {email}")
+                logger.info("seed admin: exists %s", email)
             return
-        session.add(User(email=email, password_hash=hash_password(password), role="admin", is_active=True))
+        session.add(
+            User(email=email, password_hash=hash_password(password), role="admin", is_active=True)
+        )
         await session.commit()
-        print(f"seed admin: created {email}")
+        logger.info("seed admin: created %s", email)
 
 
 async def main() -> None:
@@ -70,4 +74,5 @@ async def main() -> None:
 if __name__ == "__main__":
     import asyncio
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     asyncio.run(main())

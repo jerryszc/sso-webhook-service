@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_principal
-from app.core.config import settings
 from app.core.ratelimit import rate_limiter
 from app.schemas.auth import (
     ClientCredentialsRequest,
@@ -51,7 +51,7 @@ async def register(
     try:
         user = await register_user(session, body.email, body.password, ip)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from None
     return UserOut(id=user.id, email=user.email, role=user.role, is_active=user.is_active)
 
 
@@ -64,7 +64,7 @@ async def login(
         user = await authenticate_user(session, body.email, body.password, ip)
         access, refresh = await issue_user_tokens(session, user, ip)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from None
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
@@ -76,7 +76,7 @@ async def refresh(
     try:
         access, new_refresh = await rotate_refresh(session, body.refresh_token, ip)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from None
     return TokenPair(access_token=access, refresh_token=new_refresh)
 
 
@@ -88,14 +88,16 @@ async def logout(
     try:
         await revoke_refresh(session, body.refresh_token, ip)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from None
     return None
 
 
 @router.post(
     "/token",
     response_model=TokenPair,
-    dependencies=[Depends(rate_limiter("token", max_requests=settings.rate_limit_token_per_minute))],
+    dependencies=[
+        Depends(rate_limiter("token", max_requests=settings.rate_limit_token_per_minute))
+    ],
 )
 async def client_token(
     request: Request, body: ClientCredentialsRequest, session: AsyncSession = Depends(get_session)
@@ -104,7 +106,7 @@ async def client_token(
     try:
         access, _ = await issue_client_token(session, body.client_id, body.client_secret, ip)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from None
     return TokenPair(access_token=access, refresh_token=None)
 
 
@@ -125,7 +127,7 @@ async def password_reset_request(
             return {"message": "If the email exists, a reset token has been generated"}
         return {"message": "Password reset token generated", "reset_token": token}
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from None
 
 
 @router.post(
@@ -142,7 +144,7 @@ async def password_reset_confirm(
         await confirm_password_reset(session, body.token, body.new_password, ip)
         return {"message": "Password has been reset successfully"}
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from None
 
 
 @router.get("/me", response_model=UserOut)

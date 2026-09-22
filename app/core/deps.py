@@ -31,9 +31,13 @@ async def get_current_principal(
     try:
         payload = jwt.decode(creds.credentials, settings.jwt_secret, algorithms=[settings.jwt_alg])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
+        ) from None
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from None
 
     token_type: str = payload.get("type", "access")
     if token_type != "access":
@@ -50,7 +54,9 @@ async def get_current_principal(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive")
         return {"kind": "user", "user": user, "scopes": payload.get("scopes", "")}
     if kind == "client":
-        result = await session.exec(select(ServiceClient).where(ServiceClient.client_id == identifier))
+        result = await session.exec(
+            select(ServiceClient).where(ServiceClient.client_id == identifier)
+        )
         client = result.first()
         if client is None or not client.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Client inactive")
