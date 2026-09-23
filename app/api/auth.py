@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -118,7 +120,7 @@ async def client_token(
 )
 async def password_reset_request(
     request: Request, body: PasswordResetRequest, session: AsyncSession = Depends(get_session)
-) -> dict:
+) -> dict[str, Any]:
     ip = _get_client_ip(request)
     try:
         user, token = await request_password_reset(session, body.email, ip)
@@ -138,7 +140,7 @@ async def password_reset_request(
 )
 async def password_reset_confirm(
     request: Request, body: PasswordResetConfirm, session: AsyncSession = Depends(get_session)
-) -> dict:
+) -> dict[str, Any]:
     ip = _get_client_ip(request)
     try:
         await confirm_password_reset(session, body.token, body.new_password, ip)
@@ -148,7 +150,7 @@ async def password_reset_confirm(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(principal: dict = Depends(get_current_principal)) -> UserOut:
+async def me(principal: dict[str, Any] = Depends(get_current_principal)) -> UserOut:
     if principal["kind"] != "user":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User token required")
     user = principal["user"]

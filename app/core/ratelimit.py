@@ -1,6 +1,6 @@
 """Rate limiting fixed-window sobre Redis. Sin Redis disponible: fail-open (no bloquea)."""
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request
 
 from app.core.config import settings
 from app.core.redis import get_redis
@@ -26,7 +26,11 @@ def rate_limiter(scope: str, max_requests: int | None = None, window_seconds: in
 
     async def dependency(request: Request) -> None:
         forwarded = request.headers.get("x-forwarded-for", "")
-        ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+        ip = (
+            forwarded.split(",")[0].strip()
+            if forwarded
+            else (request.client.host if request.client else "unknown")
+        )
         await check_rate_limit(f"ratelimit:{scope}:{ip}", limit, window)
 
     return dependency

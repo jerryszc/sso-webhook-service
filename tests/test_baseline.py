@@ -1,11 +1,9 @@
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import SQLModel
 
 from app.core.security import hash_password
 from app.main import app
-from app.models.service_client import ServiceClient
 
 
 @pytest_asyncio.fixture

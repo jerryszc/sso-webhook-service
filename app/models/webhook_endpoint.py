@@ -9,7 +9,7 @@ from app.models.user import utcnow
 
 
 class WebhookEndpoint(SQLModel, table=True):
-    __tablename__ = "webhook_endpoints"  # type: ignore[assignment]
+    __tablename__ = "webhook_endpoints"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     owner_user_id: str = Field(foreign_key="users.id", index=True)

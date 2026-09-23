@@ -1,3 +1,5 @@
+from typing import Any
+
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -17,7 +19,7 @@ async def _is_blacklisted(jti: str, token_type: str) -> bool:
     client = get_redis()
     key = f"blacklist:{token_type}:{jti}"
     try:
-        return await client.exists(key) == 1
+        return bool(await client.exists(key) == 1)
     except Exception:
         return False
 
@@ -25,7 +27,7 @@ async def _is_blacklisted(jti: str, token_type: str) -> bool:
 async def get_current_principal(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: AsyncSession = Depends(get_session),
-) -> dict:
+) -> dict[str, Any]:
     if creds is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
@@ -48,16 +50,16 @@ async def get_current_principal(
     sub: str = payload.get("sub", "")
     kind, _, identifier = sub.partition(":")
     if kind == "user":
-        result = await session.exec(select(User).where(User.id == identifier))
-        user = result.first()
+        user_result = await session.exec(select(User).where(User.id == identifier))
+        user = user_result.first()
         if user is None or not user.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive")
         return {"kind": "user", "user": user, "scopes": payload.get("scopes", "")}
     if kind == "client":
-        result = await session.exec(
+        client_result = await session.exec(
             select(ServiceClient).where(ServiceClient.client_id == identifier)
         )
-        client = result.first()
+        client = client_result.first()
         if client is None or not client.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Client inactive")
         return {"kind": "client", "client": client, "scopes": payload.get("scopes", "")}
@@ -65,7 +67,7 @@ async def get_current_principal(
 
 
 def require_role(role: str):  # type: ignore[no-untyped-def]
-    async def checker(principal: dict = Depends(get_current_principal)) -> dict:
+    async def checker(principal: dict[str, Any] = Depends(get_current_principal)) -> dict[str, Any]:
         if principal["kind"] != "user" or principal["user"].role != role:
             # admin bypass: admin puede todo; user solo si role coincide
             if not (principal["kind"] == "user" and principal["user"].role == "admin"):

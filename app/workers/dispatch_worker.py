@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any, cast
 
 import httpx
 from sqlmodel import select
@@ -26,7 +27,9 @@ async def process_delivery(delivery_id: str) -> None:
         if delivery is None or delivery.status == "success":
             return
         endpoint = (
-            await session_obj.exec(select(WebhookEndpoint).where(WebhookEndpoint.id == delivery.endpoint_id))
+            await session_obj.exec(
+                select(WebhookEndpoint).where(WebhookEndpoint.id == delivery.endpoint_id)
+            )
         ).first()
         event = (
             await session_obj.exec(select(WebhookEvent).where(WebhookEvent.id == delivery.event_id))
@@ -69,12 +72,14 @@ async def process_delivery(delivery_id: str) -> None:
                 delivery.status = "pending"
                 delivery.next_retry_at = next_retry_at(delivery.attempt)
                 # Requeue with delay via sorted polling: push back after delay
+                # redis-py types rpush as Awaitable[int] | int (sync/async shared
+                # mixin); our client from get_redis() is always async, so the cast is sound.
                 redis = get_redis()
                 try:
-                    await redis.rpush("webhook:queue", delivery.id)
+                    await cast(Any, redis.rpush("webhook:queue", delivery.id))
                 except Exception:
                     pass
-        delivery.updated_at = datetime.now(timezone.utc)
+        delivery.updated_at = datetime.now(UTC)
         session_obj.add(delivery)
         await session_obj.commit()
 
@@ -84,7 +89,7 @@ async def run_forever() -> None:
     log.warning("dispatch worker started")
     while True:
         try:
-            item = await redis.blpop("webhook:queue", timeout=5)
+            item = await cast(Any, redis.blpop(["webhook:queue"], timeout=5))
         except Exception:
             await asyncio.sleep(2)
             continue

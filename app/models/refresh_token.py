@@ -8,7 +8,7 @@ from app.models.user import utcnow
 
 
 class RefreshToken(SQLModel, table=True):
-    __tablename__ = "refresh_tokens"  # type: ignore[assignment]
+    __tablename__ = "refresh_tokens"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str | None = Field(default=None, foreign_key="users.id", index=True)

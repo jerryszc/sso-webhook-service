@@ -10,7 +10,7 @@ from app.models.user import utcnow
 
 
 class AuditLog(SQLModel, table=True):
-    __tablename__ = "audit_logs"  # type: ignore[assignment]
+    __tablename__ = "audit_logs"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str | None = Field(default=None, foreign_key="users.id", index=True)

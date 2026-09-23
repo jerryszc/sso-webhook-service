@@ -10,7 +10,7 @@ from app.models.user import utcnow
 
 
 class WebhookEvent(SQLModel, table=True):
-    __tablename__ = "webhook_events"  # type: ignore[assignment]
+    __tablename__ = "webhook_events"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     type: str = Field(index=True, max_length=128)

@@ -26,10 +26,10 @@ select = [
     "T20", # flake8-print
 ]
 ignore = ["E501", "B008"]  # line too long (handled by formatter); B008 is standard FastAPI pattern
-per-file-ignores = {
-    "alembic/*" = ["I001", "E402"],  # migrations can have dynamic imports
-    "tests/*" = ["S101", "T201", "B008"],  # tests can use assert, print, and Depends
-}
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/*" = ["I001", "E402"]  # migrations can have dynamic imports
+"tests/*" = ["S101", "T201", "B008"]  # tests can use assert, print, and Depends
 
 [tool.ruff.format]
 quote-style = "double"
@@ -50,7 +50,6 @@ pretty = true
 
 [[tool.mypy.overrides]]
 module = [
-    "alembic.*",
     "sqlalchemy.*",
     "pydantic.*",
     "redis.*",

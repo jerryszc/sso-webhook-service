@@ -150,6 +150,15 @@ jobs:
 
       - name: Run smoke test with compose
         run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=sso
+          POSTGRES_PASSWORD=sso
+          POSTGRES_DB=sso
+          DATABASE_URL=postgresql+psycopg://sso:sso@db:5432/sso
+          SYNC_DATABASE_URL=postgresql+psycopg://sso:sso@db:5432/sso
+          REDIS_URL=redis://redis:6379/0
+          JWT_SECRET=ci-test-secret-not-for-production
+          EOF
           docker compose -f docker-compose.yml up -d --wait
           sleep 10
           curl -f http://localhost:8000/health || (docker compose logs api && exit 1)

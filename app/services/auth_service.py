@@ -1,5 +1,6 @@
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 from sqlmodel import select
@@ -32,7 +33,7 @@ async def _log_audit(
     event_type: str,
     user_id: str | None = None,
     ip: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
     session: AsyncSession | None = None,
 ) -> None:
     """Log audit event. If session is provided, use it; otherwise use a separate session."""

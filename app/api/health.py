@@ -18,7 +18,7 @@ async def ready() -> JSONResponse:
     checks: dict[str, str] = {}
     try:
         async with async_session_factory() as session:
-            await session.exec(text("SELECT 1"))
+            await session.execute(text("SELECT 1"))
         checks["db"] = "ok"
     except Exception:
         checks["db"] = "down"
@@ -29,4 +29,6 @@ async def ready() -> JSONResponse:
         checks["redis"] = "down"
     if all(v == "ok" for v in checks.values()):
         return JSONResponse(status_code=status.HTTP_200_OK, content={"status": "ready", **checks})
-    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "not-ready", **checks})
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "not-ready", **checks}
+    )
