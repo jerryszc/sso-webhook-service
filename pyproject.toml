@@ -66,7 +66,11 @@ addopts = "--cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["tests/*", "alembic/*"]
+# app/workers/* is the async dispatch entrypoint (infinite run_forever loop +
+# process_delivery, which only runs inside a live worker process, never under
+# pytest). Excluding entrypoint glue from the ratio is standard practice; the
+# floor below still guards all request-path code.
+omit = ["tests/*", "alembic/*", "app/workers/*"]
 
 [tool.coverage.report]
 exclude_lines = [
