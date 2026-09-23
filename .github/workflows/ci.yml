@@ -11,7 +11,7 @@ env:
   POSTGRES_USER: sso
   POSTGRES_PASSWORD: sso
   POSTGRES_DB: sso
-  REDIS_URL: redis://redis:6379/0
+  REDIS_URL: redis://localhost:6379/0
 
 jobs:
   lint:
@@ -102,16 +102,31 @@ jobs:
           pip install -r requirements.txt
 
       - name: Wait for services
+        # Pure-python readiness check: pg_isready/redis-cli are NOT installed
+        # on ubuntu-latest runners (missing binary => exit 127).
         run: |
-          sleep 5
-          pg_isready -h localhost -U ${{ env.POSTGRES_USER }}
-          redis-cli -h localhost ping
+          python - <<'EOF'
+          import socket
+          import time
+
+          for name, port in (("postgres", 5432), ("redis", 6379)):
+              for _ in range(30):
+                  try:
+                      socket.create_connection(("localhost", port), timeout=2).close()
+                      print(f"{name} ready")
+                      break
+                  except OSError:
+                      time.sleep(1)
+              else:
+                  raise SystemExit(f"{name} not ready on localhost:{port}")
+          EOF
 
       - name: Run migrations
         run: |
           alembic upgrade head
         env:
           DATABASE_URL: postgresql+psycopg://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
+          SYNC_DATABASE_URL: postgresql+psycopg://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
 
       - name: Run tests with coverage
         run: pytest
