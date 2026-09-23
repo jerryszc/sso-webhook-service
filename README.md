@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Un servicio híbrido de autenticación (SSO) y despachador de webhooks asíncrono...
+A hybrid authentication service (SSO) and asynchronous webhook dispatcher...
 
 # sso-webhook-service
 
