@@ -65,6 +65,73 @@ expires sessions. When one of them leaks, the damage is not contained.
 
 ---
 
+## Use case: two services that always travel together
+
+This repository combines authentication and webhook dispatch because they show up together in
+the same kind of company: a platform with **its own users** that also **notifies third-party
+systems**. Companies that grow quickly get there by duplication, with one login per service
+and a loose script per integration. This is the case it is designed for.
+
+**Where it fits inside a real organisation**
+
+| Context | How it is used | Why this design |
+| :--- | :--- | :--- |
+| **Internal SSO for a company running several services** | Every service validates the same token instead of implementing its own login | One entry point and one revocation point. Signing out in one place signs out everywhere, and `audit_log` answers who accessed what |
+| **Event notification to external partners** | The system publishes changes to a marketplace, a payment gateway or a carrier | Exponential backoff and the DLQ stop a downed receiver from being hammered and stop an event disappearing silently |
+| **Multi-tenant B2B platform** | Each customer holds its own machine credentials (`client_credentials`) | The `client_credentials` flow lets a backend call the API with no human user behind it |
+| **A system that must answer "who did this?"** | `audit_log` retains 90 days by default, configurable | Serves internal review and answers an audit without instrumenting every endpoint by hand |
+
+**Why one service and not two**
+
+This is a debatable decision, and it is worth being able to justify:
+
+- **For combining them:** identity and webhooks share a need for *auditing, cryptographic
+  signing and event traceability*. The `audit_log` table serves both, and the HMAC protecting
+  an outbound webhook is the same discipline that protects a token.
+- **For splitting them:** it couples two domains that evolve at different rates, and forces
+  two services that need not fail together to be deployed together. In a larger organisation
+  this separation would be the sensible choice.
+
+They are combined because it makes the reasoning easier to show: the same principle applied
+to both halves.
+
+**What this adds over "a login and a `requests.post()`"**
+
+- **Delivery is neither lost nor duplicated.** The mandatory idempotency key and the DLQ cover
+  the two expensive failures: losing a shipping order because the carrier was down, or
+  charging twice because the client resent after not getting a response.
+- **A thief who steals a refresh token exposes themselves.** Each use issues a new token and
+  marks the previous one as rotated. If anyone reuses the old one, the rotation makes it
+  visible.
+- **A session can genuinely be revoked.** The Redis blacklist keyed on `jti` invalidates one
+  specific session without waiting for it to expire, with its TTL matched to the token's own
+  lifetime.
+- **Brute force has a brake.** 10 req/min on register, login and password reset; 20 on the
+  token endpoint. Limits are per scope and per IP, not one global value.
+
+**What would be needed before production**
+
+- **The rate limiter is deliberately fail-open.** If Redis does not respond the limit is not
+  applied: the system prefers being available over being protected. That is a conscious
+  decision, and its cost is that a Redis outage removes the brute-force defence. Compensate at
+  the load balancer or CDN.
+- **The signing secret is shared.** HMAC requires the sender and receiver to share a key. With
+  several receivers each needs its own, and rotation and revocation have to be decided. There
+  is a single global secret today.
+- **Split the two services** as soon as one of them grows traffic independently, or when
+  identity has to serve organisations that do not use the dispatcher.
+- **A key per receiver and planned rotation**, instead of one global secret.
+- **Alerting on the DLQ.** The queue exists and is queryable through the API, but without
+  monitoring an event can sit in `status = "dlq"` for weeks unnoticed.
+
+**Which role this work maps to**
+
+Backend Developer in identity, payment gateways or integration platforms. It is trust-boundary
+work: deciding what gets verified, where, and which error is returned without revealing
+whether a user exists.
+
+---
+
 ## Verifiable impact
 
 **16 tests** across 3 modules. CI runs them against **real PostgreSQL 16 and Redis 7**

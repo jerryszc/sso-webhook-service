@@ -66,6 +66,71 @@ no expira las sesiones. Cuando una de ellas filtra, el da├▒o no queda conten
 
 ---
 
+## Contexto de uso: dos servicios que siempre viajan juntos
+
+Este repositorio combina autenticación y despacho de webhooks porque aparecen juntos en el
+mismo tipo de empresa: una plataforma que tiene **usuarios propios** y además **notifica a
+sistemas de terceros**. Quien crece rápido llega a esa situación por duplicación, con un login
+por servicio y un script suelto por integración. Este es el caso para el que está diseñado.
+
+**Dónde encaja dentro de una organización real**
+
+| Contexto | Cómo se usa | Por qué este diseño |
+| :--- | :--- | :--- |
+| **SSO interno de una empresa con varios servicios** | Todos los servicios validan el mismo token en lugar de implementar su propio login | Un solo punto de entrada y de revocación. Cerrar sesión en un sitio cierra en todos, y el `audit_log` responde quién accedió a qué |
+| **Notificación de eventos hacia socios externos** | El sistema publica cambios hacia un marketplace, una pasarela de pago o un transportista | El backoff exponencial y la DLQ evitan que un receptor caído se martillee y que un evento se pierda en silencio |
+| **Plataforma B2B multi-tenant** | Cada cliente tiene sus propias credenciales de máquina (`client_credentials`) | El flujo `client_credentials` permite a un backend llamar a la API sin que exista un usuario humano detrás |
+| **Sistema que debe responder "¿quién hizo esto?"** | El `audit_log` retiene 90 días por defecto, configurable | Sirve para revisión interna y para responder a una auditoría sin instrumentar cada endpoint a mano |
+
+**Por qué un mismo servicio y no dos**
+
+Es una decisión discutible, y conviene poder justificarla:
+
+- **A favor de juntos:** la identidad y los webhooks comparten necesidad de *auditoría, firma
+  criptográfica y trazabilidad de eventos*. La tabla `audit_log` sirve a ambos, y el HMAC que
+  protege un webhook saliente es la misma disciplina que la que protege un token.
+- **A favor de separados:** acopla dos dominios que evolucionan a ritmos distintos, y obliga
+  a desplegar juntos dos servicios que no tienen por qué fallar juntos. En una organización
+  más grande, esta separación sería lo razonable.
+
+Está unido porque así es más fácil mostrar el criterio: el mismo principio aplicado a las dos
+mitades.
+
+**Qué aporta frente a "un login y un `requests.post()`"**
+
+- **La entrega no se pierde ni se duplica.** La clave de idempotencia obligatoria y el DLQ
+  cubren los dos fallos caros: perder una orden de envío porque el transportista estaba caído,
+  o cobrar dos veces porque el cliente reenvió por no recibir respuesta.
+- **El atacante que roba un refresh token se delata solo.** Cada uso emite un token nuevo y
+  marca el anterior como rotado. Si alguien reutiliza el viejo, la rotación lo hace visible.
+- **La sesión se puede revocar de verdad.** La lista negra en Redis por `jti` invalida una
+  sesión concreta sin esperar a que expire, con su TTL alineado a la duración del token.
+- **La fuerza bruta tiene freno.** 10 req/min en registro, login y reset de contraseña; 20 en
+  el endpoint de token. Los límites son por ámbito e IP, no un único valor global.
+
+**Qué tendría que añadirse antes de ponerlo en producción**
+
+- **El rate limiter es *fail-open* a propósito.** Si Redis no responde, el límite no se
+  aplica: el sistema prefiere estar disponible antes que protegido. Es una decisión
+  consciente, y su coste es que una caída de Redis elimina la defensa contra fuerza bruta.
+  Compensar con un límite en el balanceador o en la CDN.
+- **El secreto de firma es compartido.** HMAC exige que emisor y receptor compartan la misma
+  clave. Con varios receptores, cada uno necesita la suya y hay que decidir rotación y
+  revocación. Hoy hay un solo secreto.
+- **Separar los dos servicios** en cuanto el tráfico de uno crezca de forma independiente, o
+  cuando la identidad deba servir a organizaciones que no usan el dispatcher.
+- **Clave por receptor y rotación planificada**, en lugar de un secreto global.
+- **Alertas sobre la DLQ.** La cola existe y es consultable por API, pero sin monitoring un
+  evento puede quedarse semanas en `status = "dlq"` sin que nadie lo note.
+
+**A qué puesto corresponde este trabajo**
+
+Backend Developer en identidad, pasarelas de pago o plataformas de integración. Es el trabajo
+de la frontera de confianza: decidir qué se verifica, dónde, y qué error se devuelve sin
+revelar si un usuario existe.
+
+---
+
 ## Impacto verificable
 
 **16 tests** en 3 m├│dulos. La CI los ejecuta contra **PostgreSQL 16 y Redis 7 reales**
